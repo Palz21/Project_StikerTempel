@@ -40,29 +40,35 @@ Agar kode dari Anggota 1, 2, dan 3 langsung terhubung tanpa perlu bongkar-pasang
 
 ---
 
-## 2. Alur Pengerjaan Bertahap (Timeline & Dependensi)
+## 2. Alur Pengerjaan Bertahap (Fase 0 – Fase 5 & Pembagian Peran)
 
-Pengembangan dibagi agar **tidak ada anggota yang menunggu terlalu lama atau bentrok di `main`**:
+Pengembangan mengikuti **Fase 0 – Fase 5** pada `Document/system_blueprint.md` Bagian 7.1. Setiap fase wajib lolos verifikasi TypeScript (`npx tsc --noEmit`) sebelum lanjut ke fase berikutnya:
 
-### Tahap 0 — Persiapan Lokal & Fondasi Awal (Anggota 1)
-- Anggota 1 menyiapkan project Next.js App Router + Tailwind + `shadcn/ui`, `prisma/schema.prisma`, `.env.example`, `prisma/seed.ts`, helper database (`src/lib/prisma.ts`), serta validasi `zod` inti (`src/lib/validations/`).
-- Anggota 1 memastikan tidak ada TypeScript error (`npx tsc --noEmit`), database lokal berhasil di-push dan di-seed, lalu **push fondasi awal ke branch `main`**.
-- **Titik Sinkronisasi 1:** Anggota 2 dan Anggota 3 melakukan `git clone` (atau `git pull origin main`), membuat `.env` lokal masing-masing, menjalankan `npm install`, `npx prisma db push`, dan `npx prisma db seed`.
+### Fase 0 — Persiapan & Isolasi Lingkungan (Anggota 1)
+- Menyiapkan `.gitignore`, `.gitattributes`, `.editorconfig`, `.nvmrc`, `.vscode/extensions.json`, `.github/` (PR template + CI), dan `storage/uploads/.gitkeep`.
 
-### Tahap 1 — Fondasi Auth, Upload, & Shell Admin (Anggota 1 + Anggota 3)
-- **Anggota 1** menyelesaikan modul Auth (`login`, `logout`, `src/lib/auth.ts`, `src/middleware.ts`), API file upload/reader (`/api/upload`, `/api/files/[filename]`), dan kontrak Server Actions transaksi inti (`order`, `payment`, `inventory`, `finance`).
-- **Anggota 3** menyiapkan komponen UI bersama (`src/components/ui/*` dari `shadcn/ui`) dan layout sidebar `/admin/layout.tsx` (diselaraskan dengan helper session dari Anggota 1).
-- **Titik Sinkronisasi 2:** Merge ke `main` via Pull Request agar Anggota 2 bisa langsung memakai layout admin, komponen UI dasar, uploader gambar, dan Server Actions order/payment.
+### Fase 1 — Fondasi Project & Database (Anggota 1)
+- Setup Next.js App Router + Tailwind CSS + `shadcn/ui`, `prisma/schema.prisma`, `.env.example`, `src/lib/prisma.ts`, validasi `zod` inti (`src/lib/validations/`), serta `prisma/seed.ts` (2 akun default, `shop_settings`, 5 `raw_materials`, dan 5–6 order + payment + cash flow lintas 6 bulan).
+- Pastikan `npx tsc --noEmit` bebas error dan database lokal berhasil `db push` + `seed`, lalu **push fondasi ke branch `main`**.
+- **Titik Sinkronisasi 1:** Anggota 2 dan Anggota 3 melakukan `git clone` / `git pull origin main`, menyalin `.env.example` ke `.env`, lalu menjalankan `npm install`, `npx prisma generate`, `npx prisma db push`, dan `npx prisma db seed`.
 
-### Tahap 2 — Kerja Paralel Fitur Utama (Semua Anggota)
-Masing-masing anggota bekerja di branch fitur terpisah:
-- **Anggota 1:** Memfinalkan seluruh logika bisnis backend, transaksi atomik `prisma.$transaction`, skenario revisi/kunci produksi, pembatalan/refund, validasi edge case keamanan (IDOR UUID, RBAC, path traversal), serta membantu integrasi PR.
-- **Anggota 2:** Membangun seluruh UI & alur **Client** (`/order`, `/track/[uuid]`) serta **Manajemen Order Admin** (`/admin/orders`, `/admin/orders/new`, `/admin/orders/[id]`, form dinamis 3 layanan, modal bayar, modal cancel/refund, dan WA Message Generator).
-- **Anggota 3:** Membangun **Dashboard Overview** (`/admin` KPI + grafik Recharts), **Inventory** (`/admin/inventory` + restock terintegrasi kas), **Finance** (`/admin/finance` khusus `OWNER`), dan **Settings** (`/admin/settings`).
+### Fase 2 — Auth RBAC, Layout Admin, & Settings (Anggota 1 + Anggota 3)
+- **Anggota 1:** Halaman `/login`, `src/actions/auth.actions.ts`, `src/lib/auth.ts` (`bcryptjs` + `jose` JWT `httpOnly` cookie), `src/middleware.ts` (proteksi `/admin/*`, `OWNER` vs `ADMIN`), serta `src/actions/settings.actions.ts`.
+- **Anggota 3:** Komponen dasar `src/components/ui/*` (`shadcn/ui`), Layout Admin Sidebar (`/admin/layout.tsx` & `AdminSidebar.tsx`), dan halaman `/admin/settings`.
+- **Titik Sinkronisasi 2:** Merge ke `main` via Pull Request agar Anggota 2 bisa langsung memakai layout admin, session helper, dan komponen UI bersama.
 
-### Tahap 3 — Integrasi, Uji Skenario Kritis, & Finalisasi
-- Seluruh PR digabung bertahap ke `main`.
-- Tim menjalankan `npx tsc --noEmit`, `npm run build`, dan **6 skenario uji kritis** secara end-to-end sebelum demo.
+### Fase 3 — Modul Inventory & Finance (Anggota 1 + Anggota 3)
+- **Anggota 1:** `src/actions/inventory.actions.ts` (CRUD bahan baku + restock terintegrasi `cash_flows`) dan `src/actions/finance.actions.ts` (catat pengeluaran + agregasi laba bersih).
+- **Anggota 3:** Halaman `/admin/inventory` dan `/admin/finance` (khusus `OWNER`).
+
+### Fase 4 — Modul Orders Admin & Upload Lokal (Anggota 1 + Anggota 2)
+- **Anggota 1:** `/api/upload` & `/api/files/[filename]` (JPG/PNG/WEBP <= 2 MB, proteksi *path traversal*), `src/actions/order.actions.ts` (Skenario A/B, 6-stage workflow, `prisma.$transaction` potong stok idempoten, cancel/refund), `src/actions/payment.actions.ts` (sync otomatis ke `cash_flows`), dan `src/actions/revision.actions.ts`.
+- **Anggota 2:** `/admin/orders`, `/admin/orders/new` (Fast Input), `/admin/orders/[id]`, `DynamicItemForm` (3 layanan), `QuickPaymentModal` (angka langsung + `Isi Sisa Tagihan`), `CancelOrderModal`, dan `WaGeneratorModal` + `src/lib/wa-templates.ts`.
+
+### Fase 5 — Halaman Publik Client, Overview, & Integrasi Akhir (Semua Anggota)
+- **Anggota 2:** Halaman publik `/order` (Skenario B) dan `/track/[uuid]` (progress bar 6 tahap, pratinjau mockup, tombol ACC/Revisi terkunci saat `PRODUCTION_QUEUE`, penanganan 404 UUID tidak valid).
+- **Anggota 3:** Dashboard Overview `/admin` (4 KPI Cards + 2 grafik Recharts + widget stok menipis) dan `ImageUploader.tsx` / `StatusBadge.tsx`.
+- **Seluruh Tim:** Merge seluruh PR ke `main`, jalankan `npx tsc --noEmit`, `npm run build`, dan uji **6 skenario kritis** sebelum demo.
 
 ---
 
@@ -156,7 +162,7 @@ File berikut berdampak ke seluruh tim. **Jangan diubah diam-diam di branch masin
 
 ## 5. SOP Penggunaan Git & GitHub Tim
 
-### A. Setup Pertama Kali (Anggota 2 & Anggota 3 setelah Tahap 0 di-push Anggota 1)
+### A. Setup Pertama Kali (Anggota 2 & Anggota 3 setelah Fase 1 di-push Anggota 1)
 1. Clone repository:
    ```bash
    git clone https://github.com/Palz21/Project_StikerTempel.git

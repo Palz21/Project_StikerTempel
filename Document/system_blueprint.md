@@ -24,9 +24,9 @@ Proyek ini merupakan aplikasi web manajemen operasional internal (*Admin-First*)
 | **UI & Styling** | Tailwind CSS + `shadcn/ui` | Tampilan minimalis modern yang konsisten, ringan, dan mempercepat pembangunan komponen form/tabel/modal. |
 | **Database & ORM** | PostgreSQL (Lokal) + Prisma ORM | Mendukung relasi kompleks, tipe data `JSON` untuk spesifikasi multi-layanan, serta transaksi atomik (`prisma.$transaction`). |
 | **Visualisasi Data** | Recharts | Komponen grafik responsif (Spline/Area Chart & Donut Chart) yang mudah diintegrasikan dengan React. |
-| **Penyimpanan File** | Local Filesystem (`/storage/uploads`) | File unggahan dinamis disimpan di luar folder `/public` dan disajikan melalui Route Handler `/api/files/[filename]` agar langsung terbaca tanpa *restart* server Next.js. |
+| **Penyimpanan File** | Local Filesystem (`./storage/uploads`) | File unggahan dinamis disimpan di luar folder `/public` via `fs/promises` (JPG/PNG/WEBP, maks 2 MB) dan disajikan melalui Route Handler `/api/files/[filename]` dengan validasi *path traversal* agar langsung terbaca tanpa *restart* server Next.js. |
 | **Optimasi Gambar** | `browser-image-compression` | Kompresi otomatis gambar *mockup*, logo, dan bukti transfer di *browser* (< 200 KB) sebelum dikirim ke server lokal. |
-| **Autentikasi & Keamanan** | Session Cookie (`httpOnly`) + `bcryptjs` + UUID v4 | Proteksi *dashboard* admin berbasis *role* (Owner/Staff) serta pencegahan celah **IDOR** pada link *tracking client* menggunakan UUID acak. |
+| **Autentikasi & Validasi** | `jose` (JWT `httpOnly` cookie) + `bcryptjs` + `zod` + UUID v4 | Proteksi rute `/admin/*` melalui `middleware.ts` berbasis *role* (`OWNER` vs `ADMIN`, tanpa NextAuth/Auth.js), validasi skema `zod`, serta pencegahan celah **IDOR** pada link *tracking client* menggunakan UUID acak. |
 
 ---
 
@@ -43,11 +43,11 @@ Kedua skenario bermuara ke satu tabel pesanan dan satu papan antrean kerja yang 
    * **Perilaku Sistem:** Masuk ke *dashboard* admin dengan status **`PENDING_REVIEW` (`Pesanan Masuk`)**. Stok bahan baku **belum dipotong** dan omset **belum dihitung**. Setelah admin mengecek desain dan menetapkan harga final, admin menekan **Konfirmasi Order** $\rightarrow$ muncul *popup* **Generator Teks WA + Link Tracking UUID**.
 
 ### 3.2. Multi-Layanan & Formulir Dinamis (*Dynamic Specs*)
-Kolom input spesifikasi menyesuaikan kategori yang dipilih dan disimpan dalam kolom `specs` bertipe `JSON`:
-* **Gelas Cup (`CUP`):** Ukuran (`12oz`, `14oz`, `16oz`, `22oz`), Tipe (`Datar`/`Oval`), Jumlah Warna (`1`/`2`), Opsi Tutup (`Flat`/`Dome`/`Tanpa Tutup`).
-* **Plastik (`PLASTIK`):** Ukuran (mis. `15x30`, `20x35`), Warna Plastik, Jumlah Warna & Sisi (`1 Sisi`/`2 Sisi`).
-* **Sablon DTF Baju (`DTF_BAJU`):** Jenis Pakaian (`Kaos`, `Flanel`, `Hoodie`, atau `Bawa Baju Sendiri`), Area Cetak (`Logo Dada`, `A4`, `A3`), Rincian Ukuran (`S/M/L/XL`).
-* **Integrasi Stok Fleksibel (*Optional Stock Link*):** Item `CUP` dan `PLASTIK` ditautkan ke `raw_materials` agar stok otomatis terpotong saat produksi. Untuk `DTF_BAJU` (jika pelanggan membawa baju sendiri), `raw_material_id` dibiarkan `null`.
+Kolom input spesifikasi menyesuaikan kategori yang dipilih, divalidasi dengan `zod`, dan disimpan dalam kolom `specs` bertipe `JSON` dengan struktur terkunci:
+* **Gelas Cup (`CUP`):** `{ size: string, cupType: "Datar" | "Oval", colorCount: number, lidType: string }` (contoh ukuran `12oz`/`14oz`/`16oz`/`22oz`, tipe `Datar`/`Oval`, jumlah warna `1`/`2`, opsi tutup `Flat`/`Dome`/`Tanpa Tutup`).
+* **Plastik (`PLASTIK`):** `{ size: string, plasticColor: string, colorCount: number, sides: "1 Sisi" | "2 Sisi" }` (contoh ukuran `15x30`/`20x35`, warna plastik, jumlah warna & sisi `1 Sisi`/`2 Sisi`).
+* **Sablon DTF Baju (`DTF_BAJU`):** `{ apparelType: string, bringOwnApparel: boolean, printArea: string, sizeBreakdown: string }` (contoh jenis pakaian `Kaos`/`Flanel`/`Hoodie`, opsi bawa baju sendiri, area cetak `Logo Dada`/`A4`/`A3`, rincian ukuran `S/M/L/XL`).
+* **Integrasi Stok Fleksibel (*Optional Stock Link*):** Item `CUP` dan `PLASTIK` ditautkan ke `raw_materials` agar stok otomatis terpotong saat produksi. Untuk `DTF_BAJU` (jika pelanggan membawa baju sendiri / `bringOwnApparel == true`), `raw_material_id` dibiarkan `null`.
 
 ### 3.3. Sistem Pembayaran Berbasis Angka Langsung (*Payment Ledger*)
 Tanpa *dropdown* manual "DP 50% / Sebagian / Lunas". Seluruh pembayaran dicatat sebagai deretan transaksi nominal langsung pada tabel `order_payments`:
@@ -102,13 +102,13 @@ Dilarang menghapus (*hard delete*) data order demi keutuhan *audit trail* keuang
   * Informasi metode pengambilan (link Google Maps untuk *Self-Pickup* atau nomor resi untuk *Ekspedisi*).
   * Tombol pintas **Chat Admin WhatsApp**.
 
-### 4.2. Dashboard Admin (`/admin` — RBAC: `OWNER` vs `STAFF`)
+### 4.2. Dashboard Admin (`/admin` — RBAC: `OWNER` vs `ADMIN`)
 Terdiri dari 5 menu sidebar minimalis:
 1. **Overview (`/admin`):** 4 Kartu KPI (*Omset Bulan Ini*, *Laba Bersih* [khusus Owner], *Total Piutang Aktif*, *Perlu Tindakan*), 2 grafik Recharts (*Spline Chart* Omset vs Pengeluaran vs Laba Bersih & *Donut Chart* Proporsi Layanan), serta widget *Stok Menipis*.
 2. **Manajemen Pesanan (`/admin/orders`):** Tab filter cepat (`Perlu Review`, `Revisi Desain`, `Antre & Proses`, `Siap Diambil`, `Belum Lunas`, `Selesai`, `Dibatalkan`), pencarian instan, serta tombol *Quick Actions* di setiap baris (`+ Bayar`, `Naikkan Status`, `Salin Link Tracking`).
 3. **Stok Bahan Baku (`/admin/inventory`):** Manajemen stok *cup* polosan, plastik, dan kaos polos dengan *badge* `Aman`/`Menipis`. Dilengkapi fitur **Restock Terintegrasi**: saat menambah stok kulakan, admin bisa mencentang opsi pencatatan biaya kulakan langsung ke `cash_flows`.
 4. **Arus Kas & Keuangan (`/admin/finance` — Khusus Owner):** Filter periode tanggal, ringkasan Pemasukan vs Pengeluaran vs **Laba Bersih**, form `+ Catat Pengeluaran` (tinta, film DTF, screen, listrik), dan jurnal transaksi gabungan (baris pemasukan order berlabel `Auto` dan terkunci).
-5. **Pengaturan (`/admin/settings`):** Tombol salin link `/order`, pengaturan profil/Maps/rekening *workshop*, serta manajemen akun Staff (khusus Owner).
+5. **Pengaturan (`/admin/settings`):** Tombol salin link `/order`, pengaturan profil/Maps/rekening *workshop*, serta manajemen akun Admin (khusus Owner).
 
 ### 4.3. Generator Pesan WhatsApp Otomatis
 Muncul otomatis sebagai *modal* setiap kali order dibuat atau status dinaikkan. Menyediakan dua tombol:
@@ -137,7 +137,7 @@ datasource db {
 
 enum Role {
   OWNER
-  STAFF
+  ADMIN
 }
 
 enum OrderSource {
@@ -195,7 +195,7 @@ model User {
   name         String
   email        String   @unique
   passwordHash String   @map("password_hash")
-  role         Role     @default(STAFF)
+  role         Role     @default(ADMIN)
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -346,7 +346,7 @@ model ShopSetting {
 umkm-sablon-web/
 ├── prisma/
 │   ├── schema.prisma              # Skema 8 tabel inti di atas
-│   └── seed.ts                    # Data awal: akun Owner/Staff, ShopSetting, contoh stok & order
+│   └── seed.ts                    # Data awal: akun OWNER/ADMIN, ShopSetting, contoh stok & order
 ├── storage/
 │   └── uploads/                   # Direktori penyimpanan lokal (logo, mockup, bukti bayar)
 ├── src/
@@ -355,7 +355,7 @@ umkm-sablon-web/
 │   │   │   ├── order/page.tsx             # Skenario B: Form pemesanan mandiri client
 │   │   │   └── track/[uuid]/page.tsx      # Dashboard Client (progress, ACC/revisi, tagihan)
 │   │   ├── (auth)/
-│   │   │   └── login/page.tsx             # Halaman login internal Owner & Staff
+│   │   │   └── login/page.tsx             # Halaman login internal Owner & Admin
 │   │   ├── admin/
 │   │   │   ├── layout.tsx                 # Sidebar Minimalis (5 menu + cek RBAC)
 │   │   │   ├── page.tsx                   # Overview: 4 KPI Cards & 2 Grafik Recharts
@@ -365,7 +365,7 @@ umkm-sablon-web/
 │   │   │   │   └── [id]/page.tsx          # Detail Order (Mockup, Pembayaran, Status, Cancel)
 │   │   │   ├── inventory/page.tsx         # Stok Bahan Baku + Restock Terintegrasi Kas
 │   │   │   ├── finance/page.tsx           # Arus Kas, Pengeluaran, & Laba Bersih (Owner Only)
-│   │   │   └── settings/page.tsx          # Link Order Publik, Profil Workshop, Manajemen Staff
+│   │   │   └── settings/page.tsx          # Link Order Publik, Profil Workshop, Manajemen Admin
 │   │   ├── api/
 │   │   │   ├── upload/route.ts            # Endpoint simpan file gambar ke /storage/uploads
 │   │   │   └── files/[filename]/route.ts  # Endpoint penyaji gambar lokal dengan aman
@@ -403,13 +403,24 @@ umkm-sablon-web/
 
 ---
 
-## 7. Pembagian Kerja Tim (3 Orang)
+## 7. Tahapan Eksekusi & Pembagian Kerja Tim (3 Orang)
+
+### 7.1. Tahapan Pembangunan Bertahap (Fase 0 – Fase 5)
+Eksekusi dilakukan bertahap dengan syarat **nol TypeScript error (`npx tsc --noEmit`)** sebelum berpindah ke fase berikutnya:
+* **Fase 0 — Persiapan & Isolasi Lingkungan:** Penyiapan repositori GitHub, `.gitignore`, `.gitattributes`, `.editorconfig`, `.nvmrc`, `.vscode/extensions.json`, template PR & CI, serta direktori `./storage/uploads`.
+* **Fase 1 — Fondasi Project & Database:** Setup Next.js App Router + Tailwind CSS + `shadcn/ui`, `prisma/schema.prisma`, `.env.example`, `src/lib/prisma.ts`, skema validasi `zod` (termasuk struktur JSON `specs`), serta `prisma/seed.ts` (2 akun default `owner@sablon.local` / `owner123` dan `admin@sablon.local` / `admin123`, 1 `shop_settings`, 5 `raw_materials`, dan 5–6 data dummy `orders` + `order_payments` + `cash_flows` lintas 6 bulan).
+* **Fase 2 — Autentikasi, RBAC, Layout Admin, & Settings:** Implementasi custom session auth (`bcryptjs` + `jose` JWT `httpOnly` cookie, tanpa NextAuth/Auth.js), `src/middleware.ts` untuk proteksi `/admin/*` (`OWNER` vs `ADMIN`), halaman `/login`, Layout Admin Sidebar, dan halaman `/admin/settings`.
+* **Fase 3 — Modul Inventory & Finance:** Halaman `/admin/inventory` (`raw_materials` + fitur restock terintegrasi kas) dan `/admin/finance` (`cash_flows` + perhitungan laba bersih, khusus `OWNER`).
+* **Fase 4 — Modul Orders Admin & Upload Lokal:** Route `/api/upload` & `/api/files/[filename]` (JPG/PNG/WEBP maks 2 MB, proteksi *path traversal*), Fast Input Order (`/admin/orders/new`), Dynamic Form 3 layanan (`CUP`, `PLASTIK`, `DTF_BAJU`), Payment Ledger angka langsung + tombol `Isi Sisa Tagihan`, *workflow* 6 tahap + `prisma.$transaction` potong stok idempoten, versioning mockup `order_revisions`, Cancel/Refund, dan WA Message Generator.
+* **Fase 5 — Halaman Publik Client & Dashboard Overview:** Halaman publik `/order` (Skenario B) dan `/track/[uuid]` (progress bar, pratinjau mockup, tombol ACC/Revisi, penanganan 404 UUID tidak valid), serta Dashboard Overview `/admin` (4 KPI Cards + 2 grafik Recharts + widget stok menipis).
+
+### 7.2. Pembagian Kerja Tim (3 Orang)
 
 Agar pengembangan berjalan paralel tanpa saling menghambat:
 
 * **Anggota 1 — Core Backend, Database, & Auth:**
-  * Inisialisasi proyek Next.js + PostgreSQL lokal + `prisma/schema.prisma` + `prisma/seed.ts`.
-  * Implementasi autentikasi (`login`, `middleware.ts` RBAC), API penyimpanan file lokal (`/api/upload` & `/api/files/[filename]`), serta *Server Actions* kritis yang melibatkan `prisma.$transaction` (potong stok, pembayaran $\rightarrow$ arus kas, dan pembatalan/refund).
+  * Inisialisasi proyek Next.js + PostgreSQL lokal + `prisma/schema.prisma` + `prisma/seed.ts` (Fase 1).
+  * Implementasi autentikasi (`login`, `jose`, `bcryptjs`, `middleware.ts` RBAC), validasi `zod`, API penyimpanan file lokal (`/api/upload` & `/api/files/[filename]`), serta *Server Actions* kritis yang melibatkan `prisma.$transaction` (potong stok, pembayaran $\rightarrow$ arus kas, restock, dan pembatalan/refund).
 * **Anggota 2 — Alur Client & Operasional Order:**
   * Membangun halaman `/order` (Skenario B) dan `/track/[uuid]` (*progress bar*, pratinjau *mockup*, tombol ACC/Revisi).
   * Membangun `/admin/orders`, `/admin/orders/new` (Skenario A + `DynamicItemForm`), `/admin/orders/[id]`, `QuickPaymentModal`, `CancelOrderModal`, dan `WaGeneratorModal`.
@@ -425,5 +436,5 @@ Sebelum demo di hadapan dosen, pastikan 6 skenario uji kritis berikut berjalan t
 2. **Uji Pembayaran Bertahap:** Buat order Rp500.000 $\rightarrow$ bayar Rp150.000 (status: `Kurang Rp350.000`) $\rightarrow$ klik tombol `Isi Sisa Tagihan` (status: `Lunas`) $\rightarrow$ pastikan dua baris pemasukan muncul di `/admin/finance`.
 3. **Uji Revisi & Kunci Produksi:** Ajukan revisi di `/track/[uuid]` $\rightarrow$ admin unggah `v2` $\rightarrow$ *client* klik ACC $\rightarrow$ pastikan setelah masuk `PRODUCTION_QUEUE`, tombol revisi di halaman *client* tidak muncul lagi.
 4. **Uji Pembatalan & Refund:** Batalkan order yang sudah bayar Rp200.000 dengan *refund* Rp150.000 $\rightarrow$ pastikan pemasukan awal tetap tercatat, muncul pengeluaran *Refund* Rp150.000, sehingga Laba Bersih mencerminkan sisa Rp50.000 secara akurat.
-5. **Uji Hak Akses (RBAC):** Login sebagai akun `STAFF` $\rightarrow$ pastikan menu `/admin/finance` tidak tampil di sidebar dan akses langsung lewat URL ditolak/diarahkan kembali ke `/admin`.
+5. **Uji Hak Akses (RBAC):** Login sebagai akun `ADMIN` $\rightarrow$ pastikan menu `/admin/finance` tidak tampil di sidebar dan akses langsung lewat URL ditolak/diarahkan kembali ke `/admin`.
 6. **Uji Keamanan UUID:** Coba ubah satu karakter pada URL `/track/[uuid]` $\rightarrow$ pastikan halaman mengembalikan tampilan *404 Not Found* yang rapi tanpa membocorkan data order lain.

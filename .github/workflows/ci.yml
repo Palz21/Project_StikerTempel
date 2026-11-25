@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check project initialization
+        id: project
+        shell: bash
+        run: |
+          if [ -f "package.json" ] && [ -f "package-lock.json" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.project.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "npm"
+
+      - name: Install dependencies
+        if: steps.project.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Generate Prisma Client
+        if: steps.project.outputs.ready == 'true' && hashFiles('prisma/schema.prisma') != ''
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stiker_tempel_db?schema=public
+        run: npx prisma generate
+
+      - name: TypeScript typecheck
+        if: steps.project.outputs.ready == 'true'
+        run: npx tsc --noEmit
+
+      - name: Run ESLint
+        if: steps.project.outputs.ready == 'true'
+        run: npm run lint

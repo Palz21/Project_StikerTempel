@@ -1,7 +1,9 @@
 {
   "recommendations": [
-    "Prisma.prisma",
+    "bmewburn.vscode-intelephense-client",
+    "onecentlin.laravel-blade",
+    "amiralizadeh9480.laravel-extra-intellisense",
     "bradlc.vscode-tailwindcss",
-    "dbaeumer.vscode-eslint"
+    "qwtel.sqlite-viewer"
   ]
 }

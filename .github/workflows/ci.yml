@@ -14,37 +14,39 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check project initialization
-        id: project
+      - name: Check Laravel project initialization
+        id: laravel
         shell: bash
         run: |
-          if [ -f "package.json" ] && [ -f "package-lock.json" ]; then
+          if [ -f "artisan" ] && [ -f "composer.json" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Setup Node.js
-        if: steps.project.outputs.ready == 'true'
-        uses: actions/setup-node@v4
+      - name: Setup PHP 8.3
+        if: steps.laravel.outputs.ready == 'true'
+        uses: shivammathur/setup-php@v2
         with:
-          node-version-file: ".nvmrc"
-          cache: "npm"
+          php-version: "8.3"
+          extensions: pdo_sqlite, sqlite3, intl, mbstring, zip, fileinfo
+          coverage: none
 
-      - name: Install dependencies
-        if: steps.project.outputs.ready == 'true'
-        run: npm ci
+      - name: Install Composer dependencies
+        if: steps.laravel.outputs.ready == 'true'
+        run: composer install --no-interaction --prefer-dist --no-progress
 
-      - name: Generate Prisma Client
-        if: steps.project.outputs.ready == 'true' && hashFiles('prisma/schema.prisma') != ''
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stiker_tempel_db?schema=public
-        run: npx prisma generate
+      - name: Prepare SQLite test environment
+        if: steps.laravel.outputs.ready == 'true'
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          touch database/database.sqlite
 
-      - name: TypeScript typecheck
-        if: steps.project.outputs.ready == 'true'
-        run: npx tsc --noEmit
+      - name: Run migrations and seeders
+        if: steps.laravel.outputs.ready == 'true'
+        run: php artisan migrate:fresh --seed --force
 
-      - name: Run ESLint
-        if: steps.project.outputs.ready == 'true'
-        run: npm run lint
+      - name: Run Laravel test suite
+        if: steps.laravel.outputs.ready == 'true'
+        run: php artisan test

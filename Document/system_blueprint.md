@@ -1,440 +1,198 @@
 # System Design & Technical Blueprint
-## Sistem Manajemen Operasional, Pre-Order, & Analitik Laba UMKM Percetakan Kemasan Custom & Sablon DTF
+## UMKM Percetakan Kemasan Custom Berbasis Web (Mitra: Cindy Advertising)
+
+**Mata Kuliah:** Pemrograman Web dan Aplikasi  
+**Dosen Pengampu:** Afifah Dwi Ramadhani, S.ST., M.Tr.T.  
+**Mitra UMKM:** Cindy Advertising, Sidoarjo (Pemilik: Ibu Diana dan Bapak Hermanto)  
+**Tim Pengembang:** Muhammad Farrel Setiawan (`2424600036`), Fauzan Alwahyu Utomo (`2424600054`), Naufal Ridho Athallah (`2424600058`)  
+**Stack Teknologi:** Laravel 11, Filament v3, Blade + Livewire 3 (Tailwind CSS), SQLite
 
 ---
 
-## 1. Ringkasan Eksekutif & Batasan Proyek
-Proyek ini merupakan aplikasi web manajemen operasional internal (*Admin-First*) yang dirancang khusus untuk UMKM jasa percetakan dan sablon *custom* (gelas *cup* minuman, plastik kemasan/kresek, serta sablon DTF pakaian/souvenir) dengan sistem produksi *Pre-Order* (*made by order*).
+## 1. Ringkasan Eksekutif dan Penyelarasan Pedoman
 
-### Prinsip Desain & Batasan Teknis
-* **Lingkungan Eksekusi:** 100% *Localhost* (tanpa ketergantungan layanan *cloud*, tanpa *Payment Gateway* berbayar, dan tanpa WhatsApp API berbayar).
-* **Arsitektur:** *Modular Monolith* dengan pola *Server-Side Rendering* (SSR) & *Server Actions* untuk menjaga integritas transaksi basis data (*ACID*).
-* **Tema Visual:** *Minimalist UI* dengan *subtle shadowing*:
-  * Latar belakang utama: `bg-slate-50` (`#F8FAFC`).
-  * Permukaan kartu (*card*): `bg-white` dengan batas tipis `border-slate-200/70` dan bayangan halus `shadow-sm` (transisi ke `shadow-md` saat *hover*).
-  * Hierarki warna: Netral gelap (`slate-900`) untuk teks/tombol primer, serta *soft badge* berwarna lembut khusus untuk status produksi dan status pembayaran.
+Aplikasi ini merupakan sistem manajemen operasional, pemesanan *pre-order*, manajemen stok bahan baku, dan pencatatan arus kas berbasis web yang dirancang khusus untuk menjawab permasalahan nyata pada **Cindy Advertising** di Sidoarjo. Cindy Advertising beroperasi dengan sekitar 4 tenaga kerja dan menerima rata-rata 4 hingga 5 pesanan setiap hari dalam jumlah partai besar, melayani empat produk utama yaitu **Gelas Cup Sablon**, **Plastik Kemasan/Sablon**, **Sablon DTF Baju**, dan **Stiker**.
+
+Rancangan ini disusun mengikuti pedoman proyek mata kuliah Pemrograman Web dan Aplikasi menggunakan **Laravel 11**, **Filament v3**, **Blade/Livewire**, dan **SQLite**, dengan penyesuaian khusus yang telah disetujui dosen pengampu yaitu mempertahankan **halaman publik tanpa login** untuk pelanggan (`/order` dan `/track/{uuid}`) serta **cakupan 8 tabel basis data**.
+
+### Prinsip Desain dan Batasan Operasional
+1. **Lingkungan Eksekusi Lokal dan Ringan:** Berjalan 100% secara lokal menggunakan PHP 8.2+ dan SQLite tanpa ketergantungan layanan *cloud*, *payment gateway* berbayar, maupun WhatsApp API berbayar.
+2. **Responsif Lintas Perangkat (*Mobile-First*):** Karena operasional harian Cindy Advertising utamanya dilakukan melalui ponsel pintar (HP), seluruh halaman admin Filament maupun halaman publik pelanggan wajib tampil nyaman pada layar HP, tablet, maupun PC/desktop.
+3. **Arsitektur *Hybrid Modular Monolith*:** Panel internal Owner dan Admin/Karyawan dibangun dengan **Filament v3** untuk kecepatan CRUD, filter, relasi, dan analitik; sedangkan halaman publik pelanggan (`/order` dan `/track/{uuid}`) dibangun dengan **Blade + Livewire 3 + Tailwind CSS** tanpa mewajibkan akun login.
+4. **Kepatuhan Keamanan Data Sensitif:** Sesuai ketentuan pedoman, seluruh data contoh pada *Seeder*, *Factory*, tangkapan layar laporan, dan demo kelas wajib memakai data fiktif atau anonim. Data transaksi serta keuangan asli Cindy Advertising hanya disimpan secara lokal pada perangkat mitra.
+5. **Pemetaan Lapisan Basis Data (8 Tabel):** Untuk menjaga keteraturan pembangunan pada Minggu 3 hingga Minggu 4, delapan tabel dikelompokkan menjadi **Lapisan Inti Operasional (MVP)** yang meliputi `orders`, `order_items`, dan `order_payments`, serta **Lapisan Pendukung Terintegrasi** yang meliputi `users`, `raw_materials`, `order_revisions`, `cash_flows`, dan `shop_settings`.
 
 ---
 
-## 2. Tech Stack & Infrastruktur Lokal
+## 2. Tech Stack dan Infrastruktur Lokal
 
 | Komponen | Teknologi | Alasan Pemilihan |
 | :--- | :--- | :--- |
-| **Framework Fullstack** | Next.js (App Router) + TypeScript | Satu repositori terpadu, *type-safe*, performa tinggi, dan mendukung *Server Actions* untuk CRUD cepat. |
-| **UI & Styling** | Tailwind CSS + `shadcn/ui` | Tampilan minimalis modern yang konsisten, ringan, dan mempercepat pembangunan komponen form/tabel/modal. |
-| **Database & ORM** | PostgreSQL (Lokal) + Prisma ORM | Mendukung relasi kompleks, tipe data `JSON` untuk spesifikasi multi-layanan, serta transaksi atomik (`prisma.$transaction`). |
-| **Visualisasi Data** | Recharts | Komponen grafik responsif (Spline/Area Chart & Donut Chart) yang mudah diintegrasikan dengan React. |
-| **Penyimpanan File** | Local Filesystem (`./storage/uploads`) | File unggahan dinamis disimpan di luar folder `/public` via `fs/promises` (JPG/PNG/WEBP, maks 2 MB) dan disajikan melalui Route Handler `/api/files/[filename]` dengan validasi *path traversal* agar langsung terbaca tanpa *restart* server Next.js. |
-| **Optimasi Gambar** | `browser-image-compression` | Kompresi otomatis gambar *mockup*, logo, dan bukti transfer di *browser* (< 200 KB) sebelum dikirim ke server lokal. |
-| **Autentikasi & Validasi** | `jose` (JWT `httpOnly` cookie) + `bcryptjs` + `zod` + UUID v4 | Proteksi rute `/admin/*` melalui `middleware.ts` berbasis *role* (`OWNER` vs `ADMIN`, tanpa NextAuth/Auth.js), validasi skema `zod`, serta pencegahan celah **IDOR** pada link *tracking client* menggunakan UUID acak. |
+| **Framework Utama** | Laravel 11 (PHP 8.2+) | Sesuai ketentuan pedoman mata kuliah, menyediakan Eloquent ORM, Migration, Seeder/Factory, Policy RBAC, dan transaksi basis data `DB::transaction()`. |
+| **Panel Admin (Owner & Admin)** | Filament v3 (`filament/filament:^3.2`) | Sesuai materi modul 5 dan 6 pedoman; menyediakan Resource CRUD, Relation Manager, Filter, Quick Actions, dan Dashboard Widgets yang otomatis responsif di HP, tablet, dan PC. |
+| **Halaman Publik Client** | Blade + Livewire 3 + Tailwind CSS | Livewire 3 dan Tailwind CSS sudah terpasang bersama Filament v3, ideal untuk membangun formulir dinamis `/order` dan halaman pelacakan `/track/{uuid}` tanpa login. |
+| **Database** | SQLite (`database/database.sqlite`) | Ringan, tanpa instalasi server database terpisah antar anggota tim, sudah didukung penuh secara bawaan oleh Laravel 11 termasuk *foreign key constraints* dan transaksi ACID. |
+| **Visualisasi Data** | Filament Chart Widgets (Chart.js) | Terintegrasi langsung dengan panel Filament untuk menampilkan grafik tren Omset vs Pengeluaran vs Laba Bersih 6 bulan serta proporsi layanan. |
+| **Penyimpanan File Lokal** | Laravel Storage Disk (`storage/app/private/uploads`) | File unggahan (logo, *mockup*, bukti bayar) divalidasi ketat (`jpg`, `jpeg`, `png`, `webp`, maks 2 MB) dan disajikan aman lewat `FileController` dengan validasi *path traversal*. |
+| **Autentikasi & Keamanan** | Laravel Session Auth + Filament Policies + UUID v4 | Autentikasi panel admin bawaan Laravel/Filament (`FilamentUser`), pemisahan peran `OWNER` vs `ADMIN` melalui Policy, serta token UUID v4 untuk mencegah celah IDOR pada `/track/{uuid}`. |
 
 ---
 
 ## 3. Alur Bisnis Lengkap (*End-to-End Workflows*)
 
 ### 3.1. Dua Skenario Pemesanan Terpadu
-Kedua skenario bermuara ke satu tabel pesanan dan satu papan antrean kerja yang sama:
+Kedua jalur pemesanan bermuara ke satu tabel `orders` dan satu antrean kerja yang sama pada `OrderResource` di panel Filament:
 
-1. **Skenario A — Pesan via WhatsApp $\rightarrow$ Pengusaha Input Sendiri (*Fast Input*):**
-   * Pelanggan deal lewat WA $\rightarrow$ Admin membuka menu `+ Order Baru` $\rightarrow$ Mengisi data pelanggan, rincian item, total harga, dan nominal pembayaran awal (boleh `0`).
-   * **Perilaku Sistem:** Pesanan langsung valid (status `WAITING_ACC_PAYMENT` atau langsung `PRODUCTION_QUEUE` jika desain sudah ACC dan DP masuk). Sistem langsung menerbitkan UUID *tracking* dan menampilkan *popup* **Generator Teks WA**.
-2. **Skenario B — Pengusaha Kirim Link $\rightarrow$ Pelanggan Input Mandiri (*Gatekeeper Pattern*):**
-   * Pengusaha mengirim link `http://localhost:3000/order` $\rightarrow$ Pelanggan mengisi identitas, kategori layanan, spesifikasi, jumlah, *upload* logo mentah, dan metode pengambilan.
-   * **Perilaku Sistem:** Masuk ke *dashboard* admin dengan status **`PENDING_REVIEW` (`Pesanan Masuk`)**. Stok bahan baku **belum dipotong** dan omset **belum dihitung**. Setelah admin mengecek desain dan menetapkan harga final, admin menekan **Konfirmasi Order** $\rightarrow$ muncul *popup* **Generator Teks WA + Link Tracking UUID**.
+1. **Skenario A (Pesan via WhatsApp atau Langsung, Admin Input Cepat):** Pelanggan bersepakat lewat chat WhatsApp atau datang langsung ke workshop Cindy Advertising. Admin atau Owner membuka panel Filament, memilih menu tambah pesanan baru, mengisi identitas pelanggan, rincian item layanan, total harga, serta nominal pembayaran awal (boleh `0`). Pesanan langsung aktif pada status `WAITING_ACC_PAYMENT` (atau langsung `PRODUCTION_QUEUE` jika desain sudah disetujui dan DP masuk), sistem menerbitkan UUID pelacakan, lalu menampilkan aksi cepat **Generator Teks WhatsApp**.
+2. **Skenario B (Pelanggan Input Mandiri Tanpa Login melalui `/order`):** Pemilik mengirim tautan `/order` kepada pelanggan. Pelanggan mengisi nama, nomor WhatsApp, kategori layanan, spesifikasi dinamis, jumlah pesanan, unggah logo mentah, dan metode pengambilan tanpa perlu mendaftar akun. Sistem menyimpannya dengan status **`PENDING_REVIEW` (`Pesanan Masuk`)**. Pada tahap ini stok bahan baku belum dipotong dan nilai omset belum dihitung. Setelah admin memeriksa desain serta menetapkan harga final di Filament, admin menekan aksi **Konfirmasi Order** untuk memindahkannya ke tahap berikutnya dan mengirim tautan pelacakan `/track/{uuid}`.
 
-### 3.2. Multi-Layanan & Formulir Dinamis (*Dynamic Specs*)
-Kolom input spesifikasi menyesuaikan kategori yang dipilih, divalidasi dengan `zod`, dan disimpan dalam kolom `specs` bertipe `JSON` dengan struktur terkunci:
-* **Gelas Cup (`CUP`):** `{ size: string, cupType: "Datar" | "Oval", colorCount: number, lidType: string }` (contoh ukuran `12oz`/`14oz`/`16oz`/`22oz`, tipe `Datar`/`Oval`, jumlah warna `1`/`2`, opsi tutup `Flat`/`Dome`/`Tanpa Tutup`).
-* **Plastik (`PLASTIK`):** `{ size: string, plasticColor: string, colorCount: number, sides: "1 Sisi" | "2 Sisi" }` (contoh ukuran `15x30`/`20x35`, warna plastik, jumlah warna & sisi `1 Sisi`/`2 Sisi`).
-* **Sablon DTF Baju (`DTF_BAJU`):** `{ apparelType: string, bringOwnApparel: boolean, printArea: string, sizeBreakdown: string }` (contoh jenis pakaian `Kaos`/`Flanel`/`Hoodie`, opsi bawa baju sendiri, area cetak `Logo Dada`/`A4`/`A3`, rincian ukuran `S/M/L/XL`).
-* **Integrasi Stok Fleksibel (*Optional Stock Link*):** Item `CUP` dan `PLASTIK` ditautkan ke `raw_materials` agar stok otomatis terpotong saat produksi. Untuk `DTF_BAJU` (jika pelanggan membawa baju sendiri / `bringOwnApparel == true`), `raw_material_id` dibiarkan `null`.
+### 3.2. Multi-Layanan dan Spesifikasi Dinamis (`order_items.specs`)
+Cindy Advertising melayani empat produk utama yang spesifikasinya berbeda. Seluruh spesifikasi khusus disimpan pada kolom `specs` bertipe `json` (di-cast sebagai `array` pada model `OrderItem`) dengan struktur kunci yang divalidasi oleh Form Request / skema Filament:
 
-### 3.3. Sistem Pembayaran Berbasis Angka Langsung (*Payment Ledger*)
-Tanpa *dropdown* manual "DP 50% / Sebagian / Lunas". Seluruh pembayaran dicatat sebagai deretan transaksi nominal langsung pada tabel `order_payments`:
-* Admin cukup menginput angka pada kolom **`Nominal Dibayar (Rp)`** (bisa dicicil berkali-kali).
-* **Tombol Pintas Efisiensi:** Tersedia tombol **`Isi Sisa Tagihan`** yang otomatis mengisi kolom input sesuai sisa utang pelanggan.
-* **Kalkulasi Status Otomatis (*Computed State*):**
-  $$\text{Total Terbayar} = \sum (\text{order\_payments.amount})$$
-  $$\text{Sisa Tagihan} = \text{orders.total\_price} - \text{Total Terbayar}$$
-  * $\text{Total Terbayar} = 0$ $\rightarrow$ Badge Abu-abu: **`Belum Bayar`**
-  * $0 < \text{Total Terbayar} < \text{Total Harga}$ $\rightarrow$ Badge Kuning: **`Kurang Rp[Sisa]`**
-  * $\text{Total Terbayar} \ge \text{Total Harga}$ $\rightarrow$ Badge Hijau: **`Lunas`**
-* **Sinkronisasi Arus Kas:** Setiap kali pembayaran dicatat, sistem otomatis menyisipkan baris `INCOME` ke tabel `cash_flows` dalam satu transaksi atomik.
+1. **Gelas Cup (`CUP`):** `size` (contoh `12oz`, `14oz`, `16oz`, `22oz`), `cupType` (`Datar` atau `Oval`), `colorCount` (angka jumlah warna sablon), dan `lidType` (`Flat`, `Dome`, atau `Tanpa Tutup`).
+2. **Plastik Kemasan/Sablon (`PLASTIK`):** `size` (contoh `15x30`, `20x35`, `25x40`), `plasticColor` (warna dasar plastik), `colorCount` (jumlah warna), dan `sides` (`1 Sisi` atau `2 Sisi`).
+3. **Sablon DTF Baju (`DTF_BAJU`):** `apparelType` (contoh `Kaos`, `Hoodie`, `Flanel`), `bringOwnApparel` (`true` jika pelanggan membawa pakaian sendiri), `printArea` (`Logo Dada`, `A4`, `A3`), dan `sizeBreakdown` (rincian ukuran `S/M/L/XL`).
+4. **Stiker (`STIKER`):** `material` (`Chromo`, `Vinyl`, `Transparan`, atau bahan lain), `size` (ukuran satuan atau lembar `A3+`), `cutType` (`Kiss-Cut`, `Die-Cut`, atau `Potong Persegi`), dan `lamination` (`Tanpa Laminasi`, `Glossy`, atau `Doff`).
+5. **Lainnya (`LAINNYA`):** `customNotes` (uraian bebas untuk pekerjaan percetakan khusus di luar empat kategori utama).
 
-### 3.4. Alur Pengerjaan (*Finite State Machine* — 6 Tahap)
+**Integrasi Stok Fleksibel:** Item `CUP`, `PLASTIK`, `STIKER`, maupun kaos polos pada `DTF_BAJU` dapat ditautkan ke `raw_materials` agar stok terpotong otomatis saat masuk antrean produksi. Apabila pelanggan membawa pakaian sendiri (`bringOwnApparel == true`) atau memakai bahan non-stok, kolom `raw_material_id` dibiarkan `null`.
 
-| No | Enum Status | Label UI | Aksi & Aturan Sistem |
+### 3.3. Sistem Pembayaran Angka Langsung (*Payment Ledger*)
+Fitur ini menjawab langsung permasalahan utama Cindy Advertising yang selama ini harus mencari nota kertas satu per satu dan rentan salah tulis saat pelanggan mencicil pembayaran:
+
+1. Seluruh pembayaran dicatat sebagai baris transaksi nominal langsung (bilangan bulat Rupiah) pada tabel `order_payments` melalui `PaymentsRelationManager` atau tombol *Quick Action* **`+ Bayar`** di daftar pesanan.
+2. Tersedia tombol pintas **`Isi Sisa Tagihan`** yang otomatis mengisi input nominal sesuai sisa piutang pelanggan saat itu.
+3. Status pembayaran dihitung otomatis (*computed accessor* pada model `Order`):
+   $$\text{Total Terbayar} = \sum (\text{order\_payments.amount})$$
+   $$\text{Sisa Tagihan} = \text{orders.total\_price} - \text{Total Terbayar}$$
+   Jika Total Terbayar bernilai `0` tampil badge abu-abu **`Belum Bayar`**, jika lebih dari `0` namun kurang dari Total Harga tampil badge kuning **`Kurang Rp[Sisa]`**, dan jika sama dengan atau melebihi Total Harga tampil badge hijau **`Lunas`**.
+4. **Sinkronisasi Arus Kas Atomik:** Setiap pencatatan pembayaran di `OrderPaymentService` wajib dijalankan dalam `DB::transaction()` agar sekaligus membuat satu baris `INCOME` pada tabel `cash_flows` yang terkunci dari pengeditan manual.
+
+### 3.4. Alur Pengerjaan 6 Tahap (*Finite State Machine*)
+
+| No | Enum `OrderStatus` | Label Antarmuka | Aturan Bisnis dan Aksi Sistem |
 | :---: | :--- | :--- | :--- |
-| 1 | `PENDING_REVIEW` | Pesanan Masuk | Khusus Skenario B. Menunggu admin memverifikasi spesifikasi & menetapkan harga. |
-| 2 | `WAITING_ACC_PAYMENT` | Menunggu ACC & Bayar | Admin kirim *mockup* & tagihan. Pelanggan dapat ACC/Ajukan Revisi di halaman *tracking*. |
-| 3 | `PRODUCTION_QUEUE` | Antre Produksi | **Trigger Atomik:** Jika `stock_deducted == false`, stok `raw_materials` tertaut otomatis dikurangi sesuai `qty` item, lalu `stock_deducted` diset `true`. |
-| 4 | `IN_PROGRESS` | Proses Pengerjaan | Sedang tahap afdruk/sablon/press DTF. Perubahan desain & item dikunci permanen. |
-| 5 | `READY_FOR_PICKUP` | Siap Diambil / Dikirim | Barang selesai & dikemas. Sistem menampilkan peringatan jika $\text{Sisa Tagihan} > 0$. Menampilkan alamat Maps (*Self-Pickup*) atau nomor resi (*Ekspedisi*). |
+| 1 | `PENDING_REVIEW` | Pesanan Masuk | Khusus Skenario B dari `/order`. Admin memverifikasi spesifikasi, menetapkan harga final, lalu mengonfirmasi pesanan. |
+| 2 | `WAITING_ACC_PAYMENT` | Menunggu ACC & Bayar | Admin mengunggah *mockup* desain dan mengirim tagihan. Pelanggan dapat menyetujui (ACC) atau mengajukan revisi di `/track/{uuid}`. |
+| 3 | `PRODUCTION_QUEUE` | Antre Produksi | **Trigger Atomik:** Di dalam `DB::transaction()`, jika `stock_deducted == false`, stok pada `raw_materials` yang tertaut dikurangi sesuai `qty` item, lalu `stock_deducted` diset `true`. |
+| 4 | `IN_PROGRESS` | Proses Pengerjaan | Tahap cetak/sablon/cutting/press DTF. Perubahan desain dan item dikunci permanen. |
+| 5 | `READY_FOR_PICKUP` | Siap Diambil / Dikirim | Barang selesai dikemas. Menampilkan peringatan jika Sisa Tagihan masih lebih dari `0`, serta alamat Maps (*Self-Pickup*) atau nomor resi (*Ekspedisi*). |
 | 6 | `COMPLETED` | Selesai | Barang telah diserahkan dan pembayaran telah lunas. |
-| - | `CANCELLED` | Dibatalkan | Status terminasi (*soft cancel*). Tidak boleh *hard delete*. |
+| 7 | `CANCELLED` | Dibatalkan | Status terminasi (*soft cancel*). Data pesanan dilarang dihapus permanen (*hard delete*) demi keutuhan audit keuangan. |
 
-### 3.5. Skenario Revisi Desain & Spesifikasi
-* **Batas Aman (*Point of No Return*):** Revisi hanya terbuka pada Tahap 1 dan Tahap 2. Begitu masuk Tahap 3 (`PRODUCTION_QUEUE`), tombol revisi di *client* dikunci total.
-* **Sub-Status Desain (`design_status`):** `PENDING` $\rightarrow$ `WAITING_ACC` $\rightarrow$ `REVISION_REQUESTED` $\rightarrow$ `APPROVED`.
-* **Versioning Mockup:** Setiap unggahan *mockup* disimpan di tabel `order_revisions` (`v1, v2, v3...`) beserta catatan *client* dan *timestamp*. Bagian produksi selalu mengacu pada versi terakhir yang berstatus `APPROVED`.
-* **Revisi Jumlah/Harga:** Hanya boleh dilakukan Admin.
-  * Di Tahap 1–2: Edit item otomatis menghitung ulang `total_price` dan sisa tagihan tanpa merusak riwayat pembayaran lama.
-  * Di Tahap 3 (jika terpaksa diubah sebelum tinta naik): Sistem menghitung selisih stok ($\Delta = \text{Qty Baru} - \text{Qty Lama}$) dan menyesuaikan `raw_materials.stock_qty` dalam `prisma.$transaction`.
-
-### 3.6. Skenario Pembatalan Order & Refund
-Dilarang menghapus (*hard delete*) data order demi keutuhan *audit trail* keuangan.
-1. **Belum Bayar & Belum Produksi:** Status diubah ke `CANCELLED` + isi `cancel_reason`. Tidak ada efek ke stok maupun kas.
-2. **Sudah Ada Pembayaran, Belum Produksi:** Admin mengisi angka langsung **`Nominal Refund (Rp)`** (bisa penuh atau dipotong jasa desain). Pemasukan awal tidak dihapus; sistem mencatat baris baru `EXPENSE` berkategori `Refund Pembatalan` di `cash_flows` sebesar nominal *refund*.
-3. **Sudah Masuk Produksi (`stock_deducted == true`):**
-   * Muncul *checkbox*: **"Kembalikan stok bahan baku polosan ke gudang?"** (Centang *Ya* jika masih di `PRODUCTION_QUEUE` / belum kena tinta; pilih *Tidak* jika sudah di `IN_PROGRESS` agar stok rusak tercatat akurat).
-   * Kolom **`Nominal Refund (Rp)`** terisi default `0` (dapat diubah jika ada kebijakan khusus).
+### 3.5. Pengelolaan Revisi Desain dan Pembatalan (*Soft Cancel* & *Refund*)
+1. **Batas Aman Revisi (*Point of No Return*):** Pelanggan hanya dapat mengajukan revisi atau menyetujui desain melalui `/track/{uuid}` pada Tahap 1 dan Tahap 2. Begitu pesanan masuk Tahap 3 (`PRODUCTION_QUEUE`), tombol revisi di halaman publik otomatis dinonaktifkan. Setiap versi desain dicatat berurutan (`v1`, `v2`, `v3`) pada `order_revisions` bersama sub-status `DesignStatus` (`PENDING`, `WAITING_ACC`, `REVISION_REQUESTED`, `APPROVED`).
+2. **Penyesuaian Jumlah/Harga oleh Admin:** Pada Tahap 1 dan 2, pengubahan item otomatis menghitung ulang `total_price` dan sisa tagihan tanpa mengganggu riwayat `order_payments`. Jika terpaksa diubah pada Tahap 3 sebelum proses cetak dimulai, `OrderService` menghitung selisih stok ($\Delta = \text{Qty Baru} - \text{Qty Lama}$) dan menyesuaikannya secara atomik.
+3. **Pembatalan Order dan *Refund*:** Jika order belum dibayar dan belum masuk produksi, status cukup diubah menjadi `CANCELLED` disertai `cancel_reason`. Jika sudah ada pembayaran, admin mengisi nominal **`Nominal Refund (Rp)`** sehingga sistem mempertahankan baris `INCOME` lama dan menyisipkan baris `EXPENSE` baru berkategori `Refund Pembatalan` pada `cash_flows`. Jika `stock_deducted == true`, tersedia opsi *toggle* **"Kembalikan stok bahan baku polosan ke gudang?"** (diaktifkan jika bahan belum tercetak, dan dimatikan jika bahan sudah telanjur rusak/tercetak).
 
 ---
 
-## 4. Arsitektur Dua Dashboard & Generator Pesan WA
+## 4. Arsitektur Antarmuka (Panel Filament dan Halaman Publik)
 
-### 4.1. Dashboard Client (Publik Tanpa Login)
-* **`/order`:** Formulir pemesanan mandiri (Skenario B) dengan *dynamic fields* berdasarkan kategori dan kompresi file logo otomatis.
-* **`/track/[uuid]`:**
-  * *Progress bar* 6 tahap yang bersih (atau banner pembatalan jika `CANCELLED`).
-  * Pratinjau *mockup* terbaru + tombol **`Setujui Desain (ACC)`** dan **`Ajukan Revisi`** (khusus saat `design_status == WAITING_ACC`).
-  * Ringkasan pembayaran angka langsung (`Total`, `Terbayar`, `Sisa Tagihan`) + info rekening *workshop*.
-  * Informasi metode pengambilan (link Google Maps untuk *Self-Pickup* atau nomor resi untuk *Ekspedisi*).
-  * Tombol pintas **Chat Admin WhatsApp**.
+### 4.1. Halaman Publik Pelanggan Tanpa Login (Blade + Livewire 3)
+1. **`/order` (Pemesanan Mandiri):** Formulir responsif mobile-first dengan pemilihan kategori layanan (`CUP`, `PLASTIK`, `DTF_BAJU`, `STIKER`, `LAINNYA`), field spesifikasi yang berubah dinamis dengan Livewire, unggah logo mentah (JPG/PNG/WEBP maks 2 MB), serta pilihan metode pengambilan.
+2. **`/track/{uuid}` (Pelacakan Pesanan & Persetujuan Desain):** Menampilkan bilah progres 6 tahap (atau spanduk pembatalan jika `CANCELLED`), pratinjau *mockup* terbaru beserta tombol **`Setujui Desain (ACC)`** dan **`Ajukan Revisi`** ketika `design_status == WAITING_ACC` dan tahap belum mencapai `PRODUCTION_QUEUE`, ringkasan tagihan (`Total`, `Terbayar`, `Sisa Tagihan`) plus info rekening Cindy Advertising, informasi pengambilan/resi, serta tombol pintas **Chat Admin WhatsApp**. Permintaan dengan UUID yang tidak valid mengembalikan halaman `404 Not Found`.
 
-### 4.2. Dashboard Admin (`/admin` — RBAC: `OWNER` vs `ADMIN`)
-Terdiri dari 5 menu sidebar minimalis:
-1. **Overview (`/admin`):** 4 Kartu KPI (*Omset Bulan Ini*, *Laba Bersih* [khusus Owner], *Total Piutang Aktif*, *Perlu Tindakan*), 2 grafik Recharts (*Spline Chart* Omset vs Pengeluaran vs Laba Bersih & *Donut Chart* Proporsi Layanan), serta widget *Stok Menipis*.
-2. **Manajemen Pesanan (`/admin/orders`):** Tab filter cepat (`Perlu Review`, `Revisi Desain`, `Antre & Proses`, `Siap Diambil`, `Belum Lunas`, `Selesai`, `Dibatalkan`), pencarian instan, serta tombol *Quick Actions* di setiap baris (`+ Bayar`, `Naikkan Status`, `Salin Link Tracking`).
-3. **Stok Bahan Baku (`/admin/inventory`):** Manajemen stok *cup* polosan, plastik, dan kaos polos dengan *badge* `Aman`/`Menipis`. Dilengkapi fitur **Restock Terintegrasi**: saat menambah stok kulakan, admin bisa mencentang opsi pencatatan biaya kulakan langsung ke `cash_flows`.
-4. **Arus Kas & Keuangan (`/admin/finance` — Khusus Owner):** Filter periode tanggal, ringkasan Pemasukan vs Pengeluaran vs **Laba Bersih**, form `+ Catat Pengeluaran` (tinta, film DTF, screen, listrik), dan jurnal transaksi gabungan (baris pemasukan order berlabel `Auto` dan terkunci).
-5. **Pengaturan (`/admin/settings`):** Tombol salin link `/order`, pengaturan profil/Maps/rekening *workshop*, serta manajemen akun Admin (khusus Owner).
-
-### 4.3. Generator Pesan WhatsApp Otomatis
-Muncul otomatis sebagai *modal* setiap kali order dibuat atau status dinaikkan. Menyediakan dua tombol:
-* **`Salin Teks`** (`navigator.clipboard.writeText`).
-* **`Buka WhatsApp`** (`https://wa.me/628xxx?text=[encoded_message]`).
+### 4.2. Panel Admin Filament (`/admin` — RBAC `OWNER` vs `ADMIN`)
+Navigasi sidebar Filament disusun ringkas menjadi 5 kelompok menu utama yang ramah layar HP:
+1. **Dashboard Overview (`/admin`):** 4 Kartu KPI (`StatsOverviewWidget`: *Omset Bulan Ini*, *Laba Bersih* [khusus `OWNER`], *Total Piutang Aktif*, *Perlu Tindakan*), 2 Grafik (`ChartWidget`: Tren Omset vs Pengeluaran vs Laba Bersih 6 bulan & Proporsi 4 Layanan), serta widget tabel *Stok Menipis*.
+2. **Manajemen Pesanan (`OrderResource`):** Tab filter cepat (`Perlu Review`, `Revisi Desain`, `Antre & Proses`, `Siap Diambil`, `Belum Lunas`, `Selesai`, `Dibatalkan`), pencarian instan berdasarkan kode order, nama pelanggan, dan nomor WA, *Relation Manager* untuk Item, Revisi Mockup, dan Pembayaran, serta aksi cepat (`+ Bayar`, `Naikkan Status`, `Salin Link Tracking`, `Generator Teks WA`, `Batalkan Pesanan`).
+3. **Stok Bahan Baku (`RawMaterialResource`):** Pengelolaan stok cup polosan, plastik, kaos polos, dan bahan stiker dengan badge `Aman` atau `Menipis`, dilengkapi aksi **`Restock Bahan`** yang menyediakan opsi mencentang pencatatan biaya kulakan otomatis sebagai `EXPENSE` di `cash_flows`.
+4. **Arus Kas & Keuangan (`CashFlowResource` — Khusus `OWNER`):** Tersembunyi dan diblokir melalui `CashFlowPolicy` bagi peran `ADMIN`. Menyediakan filter rentang tanggal, ringkasan Pemasukan vs Pengeluaran vs **Laba Bersih**, form **`+ Catat Pengeluaran`** (tinta, film DTF, screen, kertas stiker, listrik), dan jurnal transaksi gabungan di mana baris pemasukan dari pembayaran order berlabel `Auto` dan terkunci dari edit/hapus manual.
+5. **Pengaturan Workshop (`ShopSettingPage` & `UserResource`):** Salin tautan `/order`, ubah profil/alamat/Maps/rekening Cindy Advertising, serta manajemen akun `ADMIN` (khusus `OWNER`).
 
 ---
 
-## 5. Skema Database Lengkap (`prisma/schema.prisma`)
+## 5. Skema Database Lengkap (8 Tabel — Laravel 11 & SQLite)
 
-> **Catatan Teknis Tipe Data Uang:** Seluruh nominal Rupiah (IDR) menggunakan tipe `Int` (mendukung hingga Rp2,14 miliar per transaksi) agar bersih dari kendala serialisasi `BigInt`/`Decimal` pada Next.js *Server Actions* dan komponen Recharts.
+Seluruh nominal uang (Rupiah) menggunakan `unsignedBigInteger` atau `integer` bilangan bulat IDR agar bebas dari masalah pembulatan *floating point*.
 
-```prisma
-generator client {
-  provider = "prisma-client-js"
-}
+### 5.1. Ringkasan Tabel, Kolom, dan Relasi Eloquent
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+| No | Nama Tabel | Lapisan | Kolom Utama | Relasi Eloquent |
+| :---: | :--- | :--- | :--- | :--- |
+| 1 | `users` | Pendukung (Auth) | `id`, `name`, `email` (unique), `password`, `role` (`OWNER`/`ADMIN`), `is_active`, `timestamps` | Implementasi `FilamentUser` (`canAccessPanel()`) |
+| 2 | `raw_materials` | Pendukung (Stok) | `id`, `name`, `category` (`CUP`/`PLASTIK`/`DTF_BAJU`/`STIKER`/`LAINNYA`), `stock_qty`, `min_stock`, `unit`, `timestamps` | `hasMany(OrderItem::class)` |
+| 3 | `orders` | **Inti (MVP)** | `id`, `uuid` (unique), `order_code` (unique, `ORD-YYMM-XXX`), `source` (`ADMIN`/`CLIENT_LINK`), `customer_name`, `customer_wa`, `status`, `design_status`, `revision_count`, `pickup_method`, `tracking_number`, `total_price`, `current_mockup_url`, `notes`, `stock_deducted`, `cancelled_at`, `cancel_reason`, `refund_amount`, `timestamps` | `hasMany(OrderItem::class)`, `hasMany(OrderRevision::class)`, `hasMany(OrderPayment::class)`, `hasMany(CashFlow::class)` |
+| 4 | `order_items` | **Inti (MVP)** | `id`, `order_id` (FK cascade), `category`, `raw_material_id` (FK nullable set null), `item_name`, `specs` (JSON), `qty`, `unit_price`, `subtotal`, `logo_url`, `timestamps` | `belongsTo(Order::class)`, `belongsTo(RawMaterial::class)` |
+| 5 | `order_revisions` | Pendukung (Desain) | `id`, `order_id` (FK cascade), `version`, `mockup_url`, `client_note`, `admin_note`, `timestamps` (`unique(order_id, version)`) | `belongsTo(Order::class)` |
+| 6 | `order_payments` | **Inti (MVP)** | `id`, `order_id` (FK cascade), `amount`, `payment_method` (`TRANSFER`/`TUNAI`/`QRIS`), `proof_url`, `note`, `paid_at`, `timestamps` | `belongsTo(Order::class)`, `hasOne(CashFlow::class)` |
+| 7 | `cash_flows` | Pendukung (Keuangan) | `id`, `type` (`INCOME`/`EXPENSE`), `category`, `amount`, `order_payment_id` (FK unique nullable), `order_id` (FK nullable), `description`, `date`, `timestamps` | `belongsTo(OrderPayment::class)`, `belongsTo(Order::class)` |
+| 8 | `shop_settings` | Pendukung (Konfig) | `id` (singleton = 1), `shop_name`, `whatsapp_number`, `address`, `maps_url`, `bank_info`, `timestamps` | Singleton konfigurasi workshop Cindy Advertising |
 
-// ==========================================
-// ENUMS
-// ==========================================
+### 5.2. Pemetaan Fitur ke Materi Modul Pedoman
 
-enum Role {
-  OWNER
-  ADMIN
-}
-
-enum OrderSource {
-  ADMIN
-  CLIENT_LINK
-}
-
-enum OrderStatus {
-  PENDING_REVIEW
-  WAITING_ACC_PAYMENT
-  PRODUCTION_QUEUE
-  IN_PROGRESS
-  READY_FOR_PICKUP
-  COMPLETED
-  CANCELLED
-}
-
-enum DesignStatus {
-  PENDING
-  WAITING_ACC
-  REVISION_REQUESTED
-  APPROVED
-}
-
-enum ServiceCategory {
-  CUP
-  PLASTIK
-  DTF_BAJU
-  LAINNYA
-}
-
-enum PickupMethod {
-  SELF_PICKUP
-  INSTANT_COURIER
-  EXPEDITION
-}
-
-enum PaymentMethod {
-  TRANSFER
-  TUNAI
-  QRIS
-}
-
-enum CashFlowType {
-  INCOME
-  EXPENSE
-}
-
-// ==========================================
-// MODELS (8 TABEL INTI)
-// ==========================================
-
-model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  role         Role     @default(ADMIN)
-  isActive     Boolean  @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  @@map("users")
-}
-
-model RawMaterial {
-  id        String          @id @default(cuid())
-  name      String          // Contoh: "Cup 16oz Oval", "Plastik Kresek 20x35"
-  category  ServiceCategory
-  stockQty  Int             @default(0) @map("stock_qty")
-  minStock  Int             @default(100) @map("min_stock")
-  unit      String          @default("pcs") // pcs, lembar, dus
-  createdAt DateTime        @default(now()) @map("created_at")
-  updatedAt DateTime        @updatedAt @map("updated_at")
-
-  orderItems OrderItem[]
-
-  @@map("raw_materials")
-}
-
-model Order {
-  id               String       @id @default(cuid())
-  uuid             String       @unique @default(uuid()) // Token publik untuk /track/[uuid]
-  orderCode        String       @unique @map("order_code") // Contoh: ORD-2611-001
-  source           OrderSource  @default(ADMIN)
-  customerName     String       @map("customer_name")
-  customerWa       String       @map("customer_wa") // Format normalisasi: 628xxx
-  status           OrderStatus  @default(WAITING_ACC_PAYMENT)
-  designStatus     DesignStatus @default(PENDING) @map("design_status")
-  revisionCount    Int          @default(0) @map("revision_count")
-  pickupMethod     PickupMethod @default(SELF_PICKUP) @map("pickup_method")
-  trackingNumber   String?      @map("tracking_number")
-  totalPrice       Int          @default(0) @map("total_price")
-  currentMockupUrl String?      @map("current_mockup_url")
-  notes            String?      @db.Text
-
-  // Flag idempotensi untuk mencegah pemotongan stok ganda
-  stockDeducted    Boolean      @default(false) @map("stock_deducted")
-
-  // Field pembatalan & refund (soft cancel)
-  cancelledAt      DateTime?    @map("cancelled_at")
-  cancelReason     String?      @map("cancel_reason") @db.Text
-  refundAmount     Int          @default(0) @map("refund_amount")
-
-  createdAt        DateTime     @default(now()) @map("created_at")
-  updatedAt        DateTime     @updatedAt @map("updated_at")
-
-  items            OrderItem[]
-  revisions        OrderRevision[]
-  payments         OrderPayment[]
-  cashFlows        CashFlow[]
-
-  @@index([status])
-  @@index([designStatus])
-  @@index([createdAt])
-  @@map("orders")
-}
-
-model OrderItem {
-  id            String          @id @default(cuid())
-  orderId       String          @map("order_id")
-  category      ServiceCategory
-  rawMaterialId String?         @map("raw_material_id") // Nullable (mis. DTF bawa baju sendiri)
-  itemName      String          @map("item_name")
-  specs         Json            // Menyimpan ukuran, jumlah warna, area cetak DTF, dll.
-  qty           Int
-  unitPrice     Int             @default(0) @map("unit_price")
-  subtotal      Int             @default(0)
-  logoUrl       String?         @map("logo_url")
-  createdAt     DateTime        @default(now()) @map("created_at")
-
-  order         Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  rawMaterial   RawMaterial?    @relation(fields: [rawMaterialId], references: [id], onDelete: SetNull)
-
-  @@index([orderId])
-  @@map("order_items")
-}
-
-model OrderRevision {
-  id         String   @id @default(cuid())
-  orderId    String   @map("order_id")
-  version    Int      // 1, 2, 3, ...
-  mockupUrl  String   @map("mockup_url")
-  clientNote String?  @map("client_note") @db.Text
-  adminNote  String?  @map("admin_note") @db.Text
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  @@unique([orderId, version])
-  @@map("order_revisions")
-}
-
-model OrderPayment {
-  id            String        @id @default(cuid())
-  orderId       String        @map("order_id")
-  amount        Int           // Input nominal langsung (Rp)
-  paymentMethod PaymentMethod @default(TRANSFER) @map("payment_method")
-  proofUrl      String?       @map("proof_url")
-  note          String?
-  paidAt        DateTime      @default(now()) @map("paid_at")
-
-  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  cashFlow      CashFlow?
-
-  @@index([orderId])
-  @@map("order_payments")
-}
-
-model CashFlow {
-  id             String        @id @default(cuid())
-  type           CashFlowType
-  category       String        // Contoh: "Pembayaran Order", "Kulakan Bahan", "Tinta/DTF", "Refund Pembatalan"
-  amount         Int
-  orderPaymentId String?       @unique @map("order_payment_id") // Terisi otomatis dari OrderPayment
-  orderId        String?       @map("order_id") // Terisi untuk menautkan pembayaran/refund ke Order
-  description    String?       @db.Text
-  date           DateTime      @default(now())
-  createdAt      DateTime      @default(now()) @map("created_at")
-
-  orderPayment   OrderPayment? @relation(fields: [orderPaymentId], references: [id], onDelete: SetNull)
-  order          Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
-
-  @@index([date, type])
-  @@map("cash_flows")
-}
-
-model ShopSetting {
-  id             Int      @id @default(1) // Singleton row (id = 1)
-  shopName       String   @default("Sablon Kemasan Custom") @map("shop_name")
-  whatsappNumber String   @default("6281234567890") @map("whatsapp_number")
-  address        String   @default("Alamat Workshop") @db.Text
-  mapsUrl        String?  @map("maps_url")
-  bankInfo       String   @default("BCA 1234567890 a.n. Pemilik") @map("bank_info") @db.Text
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  @@map("shop_settings")
-}
-```
+| Kebutuhan Mitra | Implementasi Laravel 11 & Filament v3 | Modul Pedoman |
+| :--- | :--- | :---: |
+| Tabel 8 entitas, relasi, dan enum status | Migration SQLite, Eloquent Model, `hasMany`/`belongsTo`/`hasOne`, PHP Backed Enums | Modul 2, 3 |
+| Data contoh anonim lintas 6 bulan untuk uji & demo | `DatabaseSeeder` dan Model `Factory` (`RawMaterialFactory`, `OrderFactory`, dll.) | Modul 4 |
+| Daftar, tambah, ubah, filter, dan cari pesanan/stok/kas | Filament Resources (`OrderResource`, `RawMaterialResource`, `CashFlowResource`) | Modul 5, 6 |
+| Pilih bahan baku dan kelola item/pembayaran/revisi | `Select::make()->relationship()` dan Filament `RelationManager` | Modul 6 |
+| Rekap omset, laba bersih, piutang aktif, dan grafik | Filament `StatsOverviewWidget`, `ChartWidget`, dan `TableWidget` stok menipis | Modul 6 |
+| Halaman pesan & lacak publik tanpa login (permintaan dosen) | Blade + Livewire 3 (`/order`, `/track/{uuid}`) + UUID anti-IDOR | Perluasan |
+| Potong stok idempoten, payment ledger, dan soft cancel/refund | Service Layer dengan `DB::transaction()` dan Policy RBAC `OWNER`/`ADMIN` | Perluasan |
 
 ---
 
-## 6. Struktur Folder Next.js (App Router)
+## 6. Struktur Direktori Laravel 11 + Filament v3
 
 ```text
-umkm-sablon-web/
-├── prisma/
-│   ├── schema.prisma              # Skema 8 tabel inti di atas
-│   └── seed.ts                    # Data awal: akun OWNER/ADMIN, ShopSetting, contoh stok & order
-├── storage/
-│   └── uploads/                   # Direktori penyimpanan lokal (logo, mockup, bukti bayar)
-├── src/
-│   ├── app/
-│   │   ├── (public)/
-│   │   │   ├── order/page.tsx             # Skenario B: Form pemesanan mandiri client
-│   │   │   └── track/[uuid]/page.tsx      # Dashboard Client (progress, ACC/revisi, tagihan)
-│   │   ├── (auth)/
-│   │   │   └── login/page.tsx             # Halaman login internal Owner & Admin
-│   │   ├── admin/
-│   │   │   ├── layout.tsx                 # Sidebar Minimalis (5 menu + cek RBAC)
-│   │   │   ├── page.tsx                   # Overview: 4 KPI Cards & 2 Grafik Recharts
-│   │   │   ├── orders/
-│   │   │   │   ├── page.tsx               # Daftar Order, Tab Filter, & Quick Actions
-│   │   │   │   ├── new/page.tsx           # Skenario A: Fast Input Order oleh Admin
-│   │   │   │   └── [id]/page.tsx          # Detail Order (Mockup, Pembayaran, Status, Cancel)
-│   │   │   ├── inventory/page.tsx         # Stok Bahan Baku + Restock Terintegrasi Kas
-│   │   │   ├── finance/page.tsx           # Arus Kas, Pengeluaran, & Laba Bersih (Owner Only)
-│   │   │   └── settings/page.tsx          # Link Order Publik, Profil Workshop, Manajemen Admin
-│   │   ├── api/
-│   │   │   ├── upload/route.ts            # Endpoint simpan file gambar ke /storage/uploads
-│   │   │   └── files/[filename]/route.ts  # Endpoint penyaji gambar lokal dengan aman
-│   │   ├── globals.css
-│   │   └── layout.tsx
-│   ├── actions/                           # Next.js Server Actions (Logika Bisnis & Transaksi)
-│   │   ├── auth.actions.ts                # Login, Logout, Manajemen User
-│   │   ├── order.actions.ts               # Create (A & B), Update Status, Potong Stok, Cancel/Refund
-│   │   ├── revision.actions.ts            # Upload Mockup v1/v2, Client ACC, Ajukan Revisi
-│   │   ├── payment.actions.ts             # Input Nominal Bayar + Auto Sync CashFlow
-│   │   ├── inventory.actions.ts           # CRUD Bahan Baku + Restock Terintegrasi
-│   │   └── finance.actions.ts             # Catat Pengeluaran + Agregasi Grafik Omset/Laba
-│   ├── components/
-│   │   ├── ui/                            # Komponen dasar shadcn/ui (Button, Card, Dialog, Table...)
-│   │   ├── shared/
-│   │   │   ├── WaGeneratorModal.tsx       # Popup Salin Teks & Deep Link wa.me
-│   │   │   ├── ImageUploader.tsx          # Komponen upload + browser-image-compression
-│   │   │   └── StatusBadge.tsx            # Soft badge konsisten untuk status order & bayar
-│   │   ├── admin/
-│   │   │   ├── QuickPaymentModal.tsx      # Modal + Bayar dengan tombol "Isi Sisa Tagihan"
-│   │   │   ├── CancelOrderModal.tsx       # Modal pembatalan + opsi stok & nominal refund
-│   │   │   ├── DynamicItemForm.tsx        # Form dinamis Cup / Plastik / DTF Baju
-│   │   │   └── AnalyticsCharts.tsx        # Spline Chart Omset vs Laba & Donut Chart Kategori
-│   │   └── client/
-│   │       ├── OrderProgressBar.tsx       # Visualisasi 6 tahap produksi
-│   │       └── MockupReviewCard.tsx       # Pratinjau mockup + tombol ACC / Revisi
-│   ├── lib/
-│   │   ├── prisma.ts                      # Singleton PrismaClient
-│   │   ├── auth.ts                        # Helper verifikasi session cookie & RBAC
-│   │   ├── formatters.ts                  # Format Rupiah, normalisasi WA (628...), generator kode ORD
-│   │   └── wa-templates.ts                # Template teks WA dinamis per status pesanan
-│   └── middleware.ts                      # Proteksi rute /admin & pembatasan /admin/finance untuk Owner
-└── package.json
+Project_StikerTempel/
+├── Document/
+│   ├── system_blueprint.md                # Dokumen arsitektur teknis (file ini)
+│   ├── team_workflow.md                   # Pembagian peran pedoman, jadwal 4 minggu, SOP Git
+│   ├── field_notes_and_requirements.md    # Catatan wawancara 16 Nov, profil mitra, kebutuhan
+│   ├── shared/                            # Utilitas konversi dokumen
+│   └── Laporan-Proyek-Akhir/              # Skrip generator, aset ERD/mockup/logo, DOCX & PDF
+├── app/
+│   ├── Enums/                             # UserRole, OrderSource, OrderStatus, DesignStatus,
+│   │                                      # ServiceCategory, PickupMethod, PaymentMethod, CashFlowType
+│   ├── Models/                            # User, RawMaterial, Order, OrderItem, OrderRevision,
+│   │                                      # OrderPayment, CashFlow, ShopSetting
+│   ├── Policies/                          # CashFlowPolicy, UserPolicy, OrderPolicy, RawMaterialPolicy
+│   ├── Services/                          # OrderService, PaymentService, RevisionService,
+│   │                                      # InventoryService, FinanceAnalyticsService
+│   ├── Helpers/                           # WaTemplateHelper, FormatterHelper, FileUploadHelper
+│   ├── Filament/
+│   │   ├── Resources/
+│   │   │   ├── OrderResource.php (+ RelationManagers: Items, Revisions, Payments)
+│   │   │   ├── RawMaterialResource.php
+│   │   │   ├── CashFlowResource.php       # Khusus OWNER (dibatasi CashFlowPolicy)
+│   │   │   └── UserResource.php           # Khusus OWNER (dibatasi UserPolicy)
+│   │   ├── Pages/
+│   │   │   └── ManageShopSettings.php     # Pengaturan profil, rekening, Maps, salin link /order
+│   │   └── Widgets/
+│   │       ├── OverviewStatsWidget.php    # 4 KPI Cards (Laba Bersih hanya tampil untuk OWNER)
+│   │       ├── FinanceTrendChart.php      # Grafik Omset vs Pengeluaran vs Laba Bersih 6 bulan
+│   │       ├── ServiceProportionChart.php # Donut Chart proporsi Cup, Plastik, DTF, Stiker
+│   │       └── LowStockMaterialsWidget.php
+│   ├── Livewire/
+│   │   └── Public/
+│   │       ├── PublicOrderForm.php        # Skenario B (/order) dengan dynamic specs 4 layanan
+│   │       └── OrderTracker.php           # Pelacakan /track/{uuid} + ACC/Revisi desain
+│   └── Http/Controllers/
+│       └── FileController.php             # Penyaji file tervalidasi dari storage/app/private/uploads
+├── database/
+│   ├── database.sqlite                    # File database SQLite lokal (di-ignore Git)
+│   ├── migrations/                        # 8 tabel inti + indeks status/tanggal
+│   ├── factories/                         # Factory data contoh anonim
+│   └── seeders/                           # DatabaseSeeder (akun default, setting, bahan, order 6 bulan)
+├── resources/views/
+│   ├── layouts/public.blade.php           # Layout minimalis mobile-first halaman publik
+│   └── livewire/public/                   # public-order-form.blade.php, order-tracker.blade.php
+├── routes/web.php                         # Route /order, /track/{uuid}, /files/{path}
+└── storage/app/private/uploads/           # Penyimpanan lokal logo, mockup, bukti bayar (.gitkeep)
 ```
 
 ---
 
-## 7. Tahapan Eksekusi & Pembagian Kerja Tim (3 Orang)
+## 7. Daftar Periksa Validasi (*Double-Check Checklist*) Sebelum Uji Coba & Demo
 
-### 7.1. Tahapan Pembangunan Bertahap (Fase 0 – Fase 5)
-Eksekusi dilakukan bertahap dengan syarat **nol TypeScript error (`npx tsc --noEmit`)** sebelum berpindah ke fase berikutnya:
-* **Fase 0 — Persiapan & Isolasi Lingkungan:** Penyiapan repositori GitHub, `.gitignore`, `.gitattributes`, `.editorconfig`, `.nvmrc`, `.vscode/extensions.json`, template PR & CI, serta direktori `./storage/uploads`.
-* **Fase 1 — Fondasi Project & Database:** Setup Next.js App Router + Tailwind CSS + `shadcn/ui`, `prisma/schema.prisma`, `.env.example`, `src/lib/prisma.ts`, skema validasi `zod` (termasuk struktur JSON `specs`), serta `prisma/seed.ts` (2 akun default `owner@sablon.local` / `owner123` dan `admin@sablon.local` / `admin123`, 1 `shop_settings`, 5 `raw_materials`, dan 5–6 data dummy `orders` + `order_payments` + `cash_flows` lintas 6 bulan).
-* **Fase 2 — Autentikasi, RBAC, Layout Admin, & Settings:** Implementasi custom session auth (`bcryptjs` + `jose` JWT `httpOnly` cookie, tanpa NextAuth/Auth.js), `src/middleware.ts` untuk proteksi `/admin/*` (`OWNER` vs `ADMIN`), halaman `/login`, Layout Admin Sidebar, dan halaman `/admin/settings`.
-* **Fase 3 — Modul Inventory & Finance:** Halaman `/admin/inventory` (`raw_materials` + fitur restock terintegrasi kas) dan `/admin/finance` (`cash_flows` + perhitungan laba bersih, khusus `OWNER`).
-* **Fase 4 — Modul Orders Admin & Upload Lokal:** Route `/api/upload` & `/api/files/[filename]` (JPG/PNG/WEBP maks 2 MB, proteksi *path traversal*), Fast Input Order (`/admin/orders/new`), Dynamic Form 3 layanan (`CUP`, `PLASTIK`, `DTF_BAJU`), Payment Ledger angka langsung + tombol `Isi Sisa Tagihan`, *workflow* 6 tahap + `prisma.$transaction` potong stok idempoten, versioning mockup `order_revisions`, Cancel/Refund, dan WA Message Generator.
-* **Fase 5 — Halaman Publik Client & Dashboard Overview:** Halaman publik `/order` (Skenario B) dan `/track/[uuid]` (progress bar, pratinjau mockup, tombol ACC/Revisi, penanganan 404 UUID tidak valid), serta Dashboard Overview `/admin` (4 KPI Cards + 2 grafik Recharts + widget stok menipis).
+Enam skenario kritis berikut wajib lulus pengujian lokal sebelum kunjungan uji coba ke Cindy Advertising pada Minggu 4 dan demo di hadapan dosen:
 
-### 7.2. Pembagian Kerja Tim (3 Orang)
-
-Agar pengembangan berjalan paralel tanpa saling menghambat:
-
-* **Anggota 1 — Core Backend, Database, & Auth:**
-  * Inisialisasi proyek Next.js + PostgreSQL lokal + `prisma/schema.prisma` + `prisma/seed.ts` (Fase 1).
-  * Implementasi autentikasi (`login`, `jose`, `bcryptjs`, `middleware.ts` RBAC), validasi `zod`, API penyimpanan file lokal (`/api/upload` & `/api/files/[filename]`), serta *Server Actions* kritis yang melibatkan `prisma.$transaction` (potong stok, pembayaran $\rightarrow$ arus kas, restock, dan pembatalan/refund).
-* **Anggota 2 — Alur Client & Operasional Order:**
-  * Membangun halaman `/order` (Skenario B) dan `/track/[uuid]` (*progress bar*, pratinjau *mockup*, tombol ACC/Revisi).
-  * Membangun `/admin/orders`, `/admin/orders/new` (Skenario A + `DynamicItemForm`), `/admin/orders/[id]`, `QuickPaymentModal`, `CancelOrderModal`, dan `WaGeneratorModal`.
-* **Anggota 3 — Dashboard Owner, Stok, Keuangan, & Visualisasi:**
-  * Membangun *layout* Minimalist UI (`shadcn/ui` + sidebar responsif).
-  * Membangun `/admin` (*Overview*: 4 KPI Cards + 2 grafik Recharts), `/admin/inventory` (*Restock* terintegrasi kas), `/admin/finance` (Jurnal Arus Kas & Laba Bersih), serta `/admin/settings`.
-
----
-
-## 8. Daftar Periksa Validasi (*Double-Check Checklist*)
-Sebelum demo di hadapan dosen, pastikan 6 skenario uji kritis berikut berjalan tanpa *bug*:
-1. **Uji Idempotensi Stok:** Naikkan status order ke `PRODUCTION_QUEUE` $\rightarrow$ pastikan stok berkurang tepat satu kali (`stockDeducted = true`), dan tidak berkurang lagi saat naik ke `IN_PROGRESS`.
-2. **Uji Pembayaran Bertahap:** Buat order Rp500.000 $\rightarrow$ bayar Rp150.000 (status: `Kurang Rp350.000`) $\rightarrow$ klik tombol `Isi Sisa Tagihan` (status: `Lunas`) $\rightarrow$ pastikan dua baris pemasukan muncul di `/admin/finance`.
-3. **Uji Revisi & Kunci Produksi:** Ajukan revisi di `/track/[uuid]` $\rightarrow$ admin unggah `v2` $\rightarrow$ *client* klik ACC $\rightarrow$ pastikan setelah masuk `PRODUCTION_QUEUE`, tombol revisi di halaman *client* tidak muncul lagi.
-4. **Uji Pembatalan & Refund:** Batalkan order yang sudah bayar Rp200.000 dengan *refund* Rp150.000 $\rightarrow$ pastikan pemasukan awal tetap tercatat, muncul pengeluaran *Refund* Rp150.000, sehingga Laba Bersih mencerminkan sisa Rp50.000 secara akurat.
-5. **Uji Hak Akses (RBAC):** Login sebagai akun `ADMIN` $\rightarrow$ pastikan menu `/admin/finance` tidak tampil di sidebar dan akses langsung lewat URL ditolak/diarahkan kembali ke `/admin`.
-6. **Uji Keamanan UUID:** Coba ubah satu karakter pada URL `/track/[uuid]` $\rightarrow$ pastikan halaman mengembalikan tampilan *404 Not Found* yang rapi tanpa membocorkan data order lain.
+1. **Uji Idempotensi Stok:** Naikkan status order dari `WAITING_ACC_PAYMENT` ke `PRODUCTION_QUEUE`, pastikan stok `raw_materials` berkurang tepat sekali (`stock_deducted = true`), lalu naikkan ke `IN_PROGRESS` dan pastikan stok tidak terpotong ulang.
+2. **Uji *Payment Ledger* (Pengganti Nota Kertas):** Buat pesanan Rp500.000, catat pembayaran Rp150.000 (badge otomatis `Kurang Rp350.000`), klik tombol `Isi Sisa Tagihan` (badge menjadi `Lunas`), dan verifikasi dua baris `INCOME` otomatis muncul di `CashFlowResource`.
+3. **Uji Revisi Desain & Kunci Produksi:** Ajukan revisi pada `/track/{uuid}`, unggah mockup `v2` di Filament, klik ACC pada `/track/{uuid}`, lalu pindahkan ke `PRODUCTION_QUEUE` dan pastikan tombol revisi di halaman publik otomatis terkunci/hilang.
+4. **Uji Pembatalan (*Soft Cancel*) & *Refund*:** Batalkan pesanan yang sudah dibayar Rp200.000 dengan nominal *refund* Rp150.000; pastikan order tidak terhapus, pemasukan lama tetap tercatat, muncul pengeluaran `Refund Pembatalan` Rp150.000, sehingga Laba Bersih mencerminkan selisih Rp50.000 secara akurat.
+5. **Uji Hak Akses (RBAC `OWNER` vs `ADMIN`):** Masuk sebagai akun `admin@cindyadv.local` (`ADMIN`), pastikan menu Arus Kas & Manajemen User tersembunyi dan akses URL langsung ke `/admin/cash-flows` ditolak (`403 Forbidden`); masuk sebagai `owner@cindyadv.local` (`OWNER`) dan pastikan seluruh menu terbuka.
+6. **Uji Keamanan UUID, Upload, & Responsivitas HP:** Ubah satu karakter pada `/track/{uuid}` dan pastikan tampil `404 Not Found`; unggah file non-gambar atau di atas 2 MB dan pastikan ditolak; uji seluruh alur di layar ukuran HP (`375px`) dan desktop.

@@ -1,16 +1,21 @@
 ## Ringkasan Perubahan
-<!-- Jelaskan singkat fitur atau perbaikan pada PR ini -->
+<!-- Jelaskan singkat fitur, perbaikan, atau pembaruan dokumen pada PR ini -->
 
-## Area & File Bersama yang Disentuh
-Centang jika mengubah file bersama:
-- [ ] `prisma/schema.prisma` atau `prisma/seed.ts`
-- [ ] `package.json` / `package-lock.json`
-- [ ] `src/lib/validations/*`
-- [ ] `src/actions/*`
-- [ ] `src/components/shared/*` atau `src/components/ui/*`
+## Peran & Modul Terkait
+- [ ] Core Backend, Migrations, Models, Services, & Policies (Fauzan)
+- [ ] Filament Resources, Pages, & Halaman Publik `/order` `/track/{uuid}` (Farrel)
+- [ ] Seeders, Factories, Widgets, WA Helper, Validasi, & Dokumentasi (Naufal)
+
+## Zona File Bersama yang Disentuh
+Centang jika mengubah file bersama (wajib koordinasi di grup tim):
+- [ ] `composer.json` / `package.json`
+- [ ] `database/migrations/*` atau `database/seeders/*`
+- [ ] `app/Models/*` atau `app/Enums/*`
+- [ ] `routes/web.php`
 
 ## Checklist Sebelum Merge
-- [ ] `npx tsc --noEmit` berjalan tanpa error
-- [ ] `npm run lint` berjalan tanpa error
-- [ ] Tidak ada file `.env`, `node_modules/`, atau file tes di `storage/uploads/` yang ikut ter-commit
-- [ ] Sudah melakukan `git pull origin main` terbaru sebelum PR
+- [ ] `php artisan migrate:fresh --seed` berjalan tanpa error pada SQLite lokal
+- [ ] `php artisan test` berjalan tanpa error (jika aplikasi Laravel sudah aktif)
+- [ ] Tampilan diuji responsif pada layar HP (`375px`) dan desktop
+- [ ] Tidak ada file `.env`, `vendor/`, `node_modules/`, `database/database.sqlite`, atau file tes di `storage/app/private/uploads/` yang ikut ter-commit
+- [ ] Sudah melakukan `git pull` terbaru sebelum membuka PR
